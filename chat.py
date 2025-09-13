@@ -1,4 +1,4 @@
-
+import os
 import asyncio
 import json
 import logging
@@ -66,7 +66,7 @@ async def chat_handler(websocket):
                     "timestamp": datetime.now(UTC).isoformat()
                 }
                 
-                await broadcast(current_roomId, json.dumps(broadcast_payload), exclude_sender=False)
+                await broadcast(current_roomId, json.dumps(broadcast_payload), exclude_sender=True, sender_websocket=websocket)
                 await save_message_to_db(current_roomId, current_userId, text)
 
             

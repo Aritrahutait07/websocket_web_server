@@ -5,20 +5,25 @@ import logging
 import websockets
 import psycopg2
 from datetime import datetime, UTC
-from dotenv import load_dotenv  
-
+from dotenv import load_dotenv 
+from psycopg2 import pool 
+from google.oauth2 import id_token
+from google.auth.transport import requests
+import signal
 
 load_dotenv() 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SERVER_HOST = os.getenv("SERVER_HOST")
 SERVER_PORT = int(os.getenv("SERVER_PORT"))
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 ROOMS = {}
+db_pool = None
 
 
 
@@ -33,12 +38,26 @@ async def chat_handler(websocket):
         data = json.loads(join_message)
 
         if data.get("type") == "join":
+            token = data.get("token")
             roomId = data.get("roomId")
-            userId = data.get("userId")
-            if not roomId or not userId:
-                await websocket.close(1008, "Initial join message requires roomId and userId.")
+
+            if not token or not roomId:
+                await websocket.close(1008, "Token and roomId are required for joining.")
                 return
-            await register(websocket, roomId, userId)
+
+        
+            decoded_token = await verify_firebase_token(token)
+            
+            if decoded_token:
+                logging.info(f"Decoded token payload: {decoded_token}")
+                trusted_userId = decoded_token['user_id']
+                
+                logging.info(f"Token verified for user: {trusted_userId}")
+                await register(websocket, roomId, trusted_userId)
+            else:
+                logging.warning(f"Failed to verify token for user: {token}")
+                await websocket.close(4001, "Invalid authentication token.")
+                return
         else:
             await websocket.close(1008, "First message must be of type 'join'.")
             return
@@ -91,13 +110,49 @@ async def chat_handler(websocket):
         logging.error(f"An unexpected error occurred: {e}", exc_info=True)
     finally:
         await unregister(websocket)
+        
+        
+async def shutdown(server):
+    """Gracefully shuts down the server and its connections."""
+    logging.info("Shutdown sequence started.")
+    
+    
+    server.close()
+    await server.wait_closed()
+    
+   
+    all_clients = [client for room in ROOMS.values() for client in room]
+    if all_clients:
+        logging.info(f"Closing {len(all_clients)} active connections...")
+        
+        close_tasks = [
+            client.close(code=1001, reason="Server is shutting down") 
+            for client in all_clients
+        ]
+        
+        await asyncio.gather(*close_tasks, return_exceptions=True)
 
+def _verify_firebase_token_blocking(token):
+    
+    try:
+        
+        decoded_token = id_token.verify_firebase_token(
+            token, requests.Request(), audience=FIREBASE_PROJECT_ID
+        )
+        return decoded_token
+    except ValueError as e:
+        
+        logging.warning(f"Token verification failed: {e}")
+        return None
 
+async def verify_firebase_token(token):
+    
+    return await asyncio.to_thread(_verify_firebase_token_blocking, token)
 
 def _save_message_to_db_blocking(roomId, userId, text):
     conn = None
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = db_pool.getconn()
         cur = conn.cursor()
         cur.execute("INSERT INTO messages (roomId, userId, text) VALUES (%s, %s, %s)", (roomId, userId, text))
         conn.commit()
@@ -107,7 +162,8 @@ def _save_message_to_db_blocking(roomId, userId, text):
         logging.error(f"Database error: {e}")
         if conn: conn.rollback()
     finally:
-        if conn: conn.close()
+        if conn:
+            db_pool.putconn(conn)
 
 async def save_message_to_db(roomId, userId, text):
     await asyncio.to_thread(_save_message_to_db_blocking, roomId, userId, text)
@@ -140,10 +196,13 @@ async def broadcast(roomId, message, exclude_sender=True, sender_websocket=None)
         if message_tasks: await asyncio.gather(*message_tasks)
 
 def test_db_connection():
+    if not db_pool:
+        logging.error("FATAL: Database pool is not initialized.")
+        return False
     logging.info("Testing database connection...")
     conn = None
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = db_pool.getconn()
         cur = conn.cursor()
         cur.execute('SELECT VERSION()')
         version = cur.fetchone()[0]
@@ -154,15 +213,54 @@ def test_db_connection():
         logging.error(f"FATAL: Database connection failed: {e}")
         return False
     finally:
-        if conn: conn.close()
+        if conn:
+            db_pool.putconn(conn)
 
 async def main():
-    if not test_db_connection():
-        logging.error("Exiting due to database connection failure.")
-        return
-    logging.info(f"Starting WebSocket server on ws://{SERVER_HOST}:{SERVER_PORT}")
-    async with websockets.serve(chat_handler, SERVER_HOST, SERVER_PORT):
-        await asyncio.Future()
+    global db_pool 
+    loop = asyncio.get_running_loop()
+    stop = loop.create_future()
+    if os.name != 'nt':
+        loop.add_signal_handler(signal.SIGINT, stop.set_result, None)
+        loop.add_signal_handler(signal.SIGTERM, stop.set_result, None)
+    
+    try:
+       
+        logging.info("Initializing database connection pool...")
+        db_pool = pool.SimpleConnectionPool(
+            minconn=1,   
+            maxconn=10,  
+            dsn=DATABASE_URL
+        )
+        
+        if not test_db_connection():
+            logging.error("Exiting due to database connection failure.")
+            return
+
+        logging.info(f"Starting WebSocket server on ws://{SERVER_HOST}:{SERVER_PORT}")
+        server = await websockets.serve(chat_handler, SERVER_HOST, SERVER_PORT)
+        logging.info("Server started. Press Ctrl+C to stop.")
+        await stop
+    except KeyboardInterrupt:
+        
+        logging.info("KeyboardInterrupt received.") 
+
+    finally:
+        
+        if server:
+            await shutdown(server)
+        
+        if db_pool:
+            logging.info("Closing database connection pool.")
+            db_pool.closeall()
+        
+        logging.info("Server shut down gracefully.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if not DATABASE_URL:
+        logging.error("FATAL: DATABASE_URL environment variable not set.")
+    else:
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            logging.info("Server is shutting down.")

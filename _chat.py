@@ -3,7 +3,6 @@ import asyncio
 import json
 import logging
 import websockets
-import psycopg2
 from datetime import datetime, UTC
 from dotenv import load_dotenv 
 from psycopg2 import pool 
@@ -215,6 +214,59 @@ def test_db_connection():
     finally:
         if conn:
             db_pool.putconn(conn)
+
+def fetch_messages_keyset(roomId, before=None, limit=50):
+    """Fetch messages with keyset pagination (older messages before a cursor)."""
+    conn = None
+    messages = []
+    nextCursor = None  # bookmark for fetching more
+
+    try:
+        conn = db_pool.getconn()
+        cur = conn.cursor()
+
+        if before:
+            query = """
+                SELECT userId, text, timestamp
+                FROM messages
+                WHERE roomId = %s AND timestamp < %s
+                ORDER BY timestamp DESC
+                LIMIT %s
+            """
+            cur.execute(query, (roomId, before, limit))
+        else:
+            query = """
+                SELECT userId, text, timestamp
+                FROM messages
+                WHERE roomId = %s
+                ORDER BY timestamp DESC
+                LIMIT %s
+            """
+            cur.execute(query, (roomId, limit))
+
+        rows = cur.fetchall()
+        for row in rows:
+            messages.append({
+                "userId": row[0],
+                "text": row[1],
+                "timestamp": row[2].isoformat()
+            })
+
+        # if we got messages, set nextCursor to the last one's timestamp
+        if rows:
+            nextCursor = rows[-1][2].isoformat()
+
+        cur.close()
+    except Exception as e:
+        logging.error(f"Database error while fetching messages: {e}")
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+
+    return {
+        "messages": messages,
+        "nextCursor": nextCursor
+    }
 
 async def main():
     global db_pool 

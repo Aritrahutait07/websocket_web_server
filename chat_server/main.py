@@ -13,16 +13,22 @@ async def shutdown(server):
     await server.wait_closed()
 
 async def main():
+    logging.basicConfig(level=logging.INFO)
+    logging.info("Starting server...")
     db_pool = init_db_pool(DATABASE_URL)
+    logging.info("Database pool initialized.")
     if not test_db_connection():
+        logging.error("Database connection test failed. Exiting.")
         return
-
+    logging.info("Database connection test succeeded.")
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
+    logging.info("Setting up signal handlers...")
     if os.name != 'nt':
         loop.add_signal_handler(signal.SIGINT, stop.set_result, None)
         loop.add_signal_handler(signal.SIGTERM, stop.set_result, None)
-
+        
+    logging.info("Starting WebSocket server...")
     server = await websockets.serve(chat_handler, SERVER_HOST, SERVER_PORT)
     logging.info(f"Server running on ws://{SERVER_HOST}:{SERVER_PORT}")
     await stop

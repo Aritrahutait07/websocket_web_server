@@ -9,11 +9,13 @@ import os
 
 
 async def health_check(path, request_headers):
-    
+    """Handle health check requests from Render and other monitoring services"""
     if path == "/health":
+        logging.info("Health check requested")
         
-        return websockets.http.Response(status_code=200, headers={"Content-Type": "text/plain"}, body=b"OK")
+        return (200, [("Content-Type", "text/plain")], b"OK")
     
+   
     return None
 
 async def shutdown(server):

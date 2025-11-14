@@ -27,8 +27,13 @@ async def chat_handler(websocket):
             return
 
         trusted_userId = decoded_token['user_id']
-        await register(websocket, roomId, trusted_userId)
+        
+        user_email = decoded_token.get('email', trusted_userId)
+        
+        await register(websocket, roomId, trusted_userId, user_email)
 
+        
+        
         async for message in websocket:
             await handle_message(websocket, message)
 
@@ -50,8 +55,11 @@ async def handle_message(websocket, raw_message):
             "type": "message",
             "text": data.get("text"),
             "userId": websocket.user_id,
+            #"email":websocket.user_email,
             "roomId": websocket.room_id,
-            "timestamp": datetime.now(UTC).isoformat()
+            "timestamp": datetime.now(UTC).isoformat(),
+            
+            
         }
         await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
         await save_message_to_db(websocket.room_id, websocket.user_id, data.get("text"))
@@ -59,14 +67,15 @@ async def handle_message(websocket, raw_message):
     elif data.get("type") == "join":
         new_roomId = data.get("roomId")
         current_userId = websocket.user_id
+        #current_userEmail = websocket.email
                 
         if new_roomId and new_roomId != websocket.room_id:
             logging.info(f"User '{current_userId}' is switching to room '{new_roomId}'.")
             await unregister(websocket)
             await register(websocket, new_roomId, current_userId)
+            
         else:
             logging.warning(f"User '{current_userId}' sent an invalid room-switch request.")
-
 
     elif data.get("type") == "load_chat":
         before = data.get("before")  # ISO timestamp string
@@ -85,6 +94,5 @@ async def handle_message(websocket, raw_message):
         }
         await websocket.send(json.dumps(response))
         
-
     else:
         logging.warning(f"Unknown message type: {data.get('type')}")

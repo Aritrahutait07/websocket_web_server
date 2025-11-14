@@ -7,6 +7,15 @@ from db import init_db_pool, test_db_connection
 from handlers import chat_handler
 import os
 
+
+async def health_check(path, request_headers):
+    
+    if path == "/health":
+        
+        return websockets.http.Response(status_code=200, headers={"Content-Type": "text/plain"}, body=b"OK")
+    
+    return None
+
 async def shutdown(server):
     logging.info("Shutdown sequence started...")
     server.close()
@@ -29,7 +38,13 @@ async def main():
         loop.add_signal_handler(signal.SIGTERM, stop.set_result, None)
         
     logging.info("Starting WebSocket server...")
-    server = await websockets.serve(chat_handler, SERVER_HOST, SERVER_PORT)
+    server = await websockets.serve(
+        chat_handler,
+        SERVER_HOST,
+        SERVER_PORT,
+        process_request=health_check  
+    )
+    #server = await websockets.serve(chat_handler, SERVER_HOST, SERVER_PORT)
     logging.info(f"Server running on ws://{SERVER_HOST}:{SERVER_PORT}")
     await stop
     await shutdown(server)

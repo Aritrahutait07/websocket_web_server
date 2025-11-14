@@ -29,15 +29,15 @@ def test_db_connection():
         if conn:
             db_pool.putconn(conn)
 
-def _save_message_to_db_blocking(roomId, userId, text):
+def _save_message_to_db_blocking(roomId, userId, email, text):
     conn = None
     try:
         conn = db_pool.getconn()
         cur = conn.cursor()
-        cur.execute("INSERT INTO messages (roomId, userId, text) VALUES (%s, %s, %s)", (roomId, userId, text))
+        cur.execute("INSERT INTO messages (roomId, userId,email, text) VALUES (%s, %s, %s, %s)", (roomId, userId, email, text))
         conn.commit()
         cur.close()
-        logging.info(f"Saved message from '{userId}' in room '{roomId}' to DB.")
+        logging.info(f"Saved message from '{userId}' email '{email}' in room '{roomId}' to DB.")
     except Exception as e:
         logging.error(f"Database error: {e}")
         if conn: conn.rollback()
@@ -45,8 +45,8 @@ def _save_message_to_db_blocking(roomId, userId, text):
         if conn:
             db_pool.putconn(conn)
 
-async def save_message_to_db(roomId, userId, text):
-    await asyncio.to_thread(_save_message_to_db_blocking, roomId, userId, text)
+async def save_message_to_db(roomId, userId, email, text):
+    await asyncio.to_thread(_save_message_to_db_blocking, roomId, userId, email, text)
 
 
 def fetch_messages_keyset(roomId, before=None, limit=50):

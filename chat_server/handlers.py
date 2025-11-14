@@ -35,7 +35,7 @@ async def chat_handler(websocket):
         
         
         async for message in websocket:
-            await handle_message(websocket, message)
+            await handle_message(websocket,message)
 
     except websockets.exceptions.ConnectionClosed as e:
         logging.info(f"Connection closed: {e.code} {e.reason}")
@@ -54,19 +54,19 @@ async def handle_message(websocket, raw_message):
         payload = {
             "type": "message",
             "text": data.get("text"),
-            "userId": websocket.user_id,
-            #"email":websocket.user_email,
+            "userId": websocket.user_id, 
+            "email":websocket.user_email,
             "roomId": websocket.room_id,
             "timestamp": datetime.now(UTC).isoformat(),
             
             
         }
         await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
-        await save_message_to_db(websocket.room_id, websocket.user_id, data.get("text"))
+        await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, data.get("text"))
 
     elif data.get("type") == "join":
         new_roomId = data.get("roomId")
-        current_userId = websocket.user_id
+        current_userId = websocket.user_email
         #current_userEmail = websocket.email
                 
         if new_roomId and new_roomId != websocket.room_id:

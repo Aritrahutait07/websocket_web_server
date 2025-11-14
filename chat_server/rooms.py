@@ -14,7 +14,7 @@ async def register(websocket, roomId, userId,user_email):
     #websocket.email = email
     websocket.user_email = user_email
     logging.info(f"User '{userId}' joined room '{roomId}'")
-    announcement = {"type": "announcement", "message": f"{user_email}"}
+    announcement = {"type": "announcement", "message": f"{user_email} has joined the room."}
     await broadcast(roomId, json.dumps(announcement), exclude_sender=False)
 
 async def unregister(websocket):
@@ -24,7 +24,7 @@ async def unregister(websocket):
         ROOMS[roomId].remove(websocket)
         logging.info(f"User '{userId}' left room '{roomId}'")
         user_email = getattr(websocket, 'user_email', 'Unknown')
-        announcement = {"type": "announcement", "message": f"{user_email}"}
+        announcement = {"type": "announcement", "message": f"{user_email} has left the room."}
         await broadcast(roomId, json.dumps(announcement), exclude_sender=False)
         if not ROOMS[roomId]:
             del ROOMS[roomId]

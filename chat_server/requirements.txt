@@ -5,4 +5,4 @@ websockets
 google-auth
 requests
 aiohttp
-azure-ai-contentmoderator
+azure-ai-contentsafety

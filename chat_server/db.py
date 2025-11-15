@@ -61,7 +61,7 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
 
         if before:
             query = """
-                SELECT userId, text, timestamp
+                SELECT userId,email text, timestamp
                 FROM messages
                 WHERE roomId = %s AND timestamp < %s
                 ORDER BY timestamp DESC
@@ -70,7 +70,7 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
             cur.execute(query, (roomId, before, limit))
         else:
             query = """
-                SELECT userId, text, timestamp
+                SELECT userId,email, text, timestamp
                 FROM messages
                 WHERE roomId = %s
                 ORDER BY timestamp DESC
@@ -82,13 +82,14 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
         for row in rows:
             messages.append({
                 "userId": row[0],
-                "text": row[1],
-                "timestamp": row[2].isoformat()
+                "text": row[2],
+                "email": row[1],
+                "timestamp": row[3].isoformat()
             })
 
         # if we got messages, set nextCursor to the last one's timestamp
         if rows:
-            nextCursor = rows[-1][2].isoformat()
+            nextCursor = rows[-1][3].isoformat()
 
         cur.close()
     except Exception as e:

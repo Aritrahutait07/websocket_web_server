@@ -1,6 +1,8 @@
 import logging
 from psycopg2 import pool
 import asyncio
+import os
+import logging
 
 db_pool = None
 
@@ -102,3 +104,35 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
         "messages": messages,
         "nextCursor": nextCursor
     }
+    
+
+
+def _log_moderation_event_blocking(userId, userEmail, roomId, text, category, severity, action):
+    conn = None
+    try:
+        conn = db_pool.getconn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO moderation_logs 
+            (user_id, user_email, room_id, original_message_text, violation_category, severity_score, action_taken) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (userId, userEmail, roomId, text, category, severity, action)
+        )
+        conn.commit()
+        cur.close()
+        logging.info(f"Logged moderation event for user '{userId}' in room '{roomId}'. Action: {action}")
+    except Exception as e:
+        logging.error(f"Database error while logging moderation event: {e}")
+        if conn: conn.rollback()
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+
+async def log_moderation_event(userId, userEmail, roomId, text, category, severity, action):
+    """Asynchronously logs a moderation event to the database."""
+    await asyncio.to_thread(
+        _log_moderation_event_blocking, 
+        userId, userEmail, roomId, text, category, severity, action
+    )

@@ -6,44 +6,47 @@ from auth import verify_firebase_token
 from rooms import register, unregister, broadcast
 from db import save_message_to_db, fetch_messages_keyset
 import asyncio
+import aiohttp
+from moderation import analyze_text, evaluate_analysis
 
 async def chat_handler(websocket):
-    try:
-        join_message = await websocket.recv()
-        data = json.loads(join_message)
+    async with aiohttp.ClientSession() as session:
+        try:
+            join_message = await websocket.recv()
+            data = json.loads(join_message)
 
-        if data.get("type") != "join":
-            await websocket.close(1008, "First message must be join.")
-            return
+            if data.get("type") != "join":
+                await websocket.close(1008, "First message must be join.")
+                return
 
-        token, roomId = data.get("token"), data.get("roomId")
-        if not token or not roomId:
-            await websocket.close(1008, "Token & roomId required.")
-            return
+            token, roomId = data.get("token"), data.get("roomId")
+            if not token or not roomId:
+                await websocket.close(1008, "Token & roomId required.")
+                return
 
-        decoded_token = await verify_firebase_token(token)
-        if not decoded_token:
-            await websocket.close(4001, "Invalid authentication token.")
-            return
+            decoded_token = await verify_firebase_token(token)
+            if not decoded_token:
+                await websocket.close(4001, "Invalid authentication token.")
+                return
 
-        trusted_userId = decoded_token['user_id']
-        
-        user_email = decoded_token.get('email', trusted_userId)
-        
-        await register(websocket, roomId, trusted_userId, user_email)
+            trusted_userId = decoded_token['user_id']
+            
+            user_email = decoded_token.get('email', trusted_userId)
+            
+            await register(websocket, roomId, trusted_userId, user_email)
 
-        
-        
-        async for message in websocket:
-            await handle_message(websocket,message)
+            
+            
+            async for message in websocket:
+                await handle_message(websocket, message, session)
 
-    except websockets.exceptions.ConnectionClosed as e:
-        logging.info(f"Connection closed: {e.code} {e.reason}")
-    finally:
-        await unregister(websocket)
+        except websockets.exceptions.ConnectionClosed as e:
+            logging.info(f"Connection closed: {e.code} {e.reason}")
+        finally:
+            await unregister(websocket)
 
 
-async def handle_message(websocket, raw_message):
+async def handle_message(websocket, raw_message, session):
     try:
         data = json.loads(raw_message)
     except json.JSONDecodeError:
@@ -51,18 +54,61 @@ async def handle_message(websocket, raw_message):
         return
 
     if data.get("type") == "message":
-        payload = {
-            "type": "message",
-            "text": data.get("text"),
-            "userId": websocket.user_id, 
-            "email":websocket.user_email,
-            "roomId": websocket.room_id,
-            "timestamp": datetime.now(UTC).isoformat(),
+        message_text = data.get("text", "").strip()
+        if not message_text:
+            return 
+
+        
+        analysis_response = await analyze_text(session, message_text)
+        decision, category = evaluate_analysis(analysis_response)
+        
+        #await asyncio.sleep(5)
+        if decision == 'OK':
+            
+            payload = {
+                "type": "message",
+                "text": message_text,
+                "userId": websocket.user_id, 
+                "email": websocket.user_email,
+                "roomId": websocket.room_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+            #print("\nMessage Content")
+            await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+            await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
+
+        elif decision == 'BLOCK' :
+            message_text = f"Your message was blocked due to moderation rules due to category {category}. Please adhere to community guidelines."
+            payload = {
+                "type": "message",
+                "text": message_text,
+                "userId": websocket.user_id, 
+                "email": websocket.user_email,
+                "roomId": websocket.room_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+           #print("\nModeration Blocked Content")
+            await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+            await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
             
             
-        }
-        await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
-        await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, data.get("text"))
+
+        elif decision == 'SELF_HARM_ALERT':
+            
+            message_text = f"Your message was flagged for self-harm content. Please reach out to a crisis hotline or a trusted person for support."
+            payload = {
+                "type": "message",
+                "text": message_text,
+                "userId": websocket.user_id, 
+                "email": websocket.user_email,
+                "roomId": websocket.room_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+            #print("\nSelf Harm Alert Content")
+            await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+            await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
+            
+            
 
     elif data.get("type") == "join":
         new_roomId = data.get("roomId")

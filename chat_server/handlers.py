@@ -4,10 +4,11 @@ from datetime import datetime, UTC
 import websockets
 from auth import verify_firebase_token
 from rooms import register, unregister, broadcast
-from db import save_message_to_db, fetch_messages_keyset
+from db import save_message_to_db, fetch_messages_keyset, toggle_like_on_message
 import asyncio
 import aiohttp
 from moderation import analyze_text, evaluate_analysis
+
 
 async def chat_handler(websocket):
     async with aiohttp.ClientSession() as session:
@@ -78,7 +79,7 @@ async def handle_message(websocket, raw_message, session):
             await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
 
         elif decision == 'BLOCK' :
-            message_text = f"Your message was blocked due to moderation rules due to category {category}. Please adhere to community guidelines."
+            message_text = f"Your message was blocked due to moderation rules due to category {category}. Please adhere to community guidelines [RETRACTED]."
             payload = {
                 "type": "message",
                 "text": message_text,
@@ -95,7 +96,7 @@ async def handle_message(websocket, raw_message, session):
 
         elif decision == 'SELF_HARM_ALERT':
             
-            message_text = f"Your message was flagged for self-harm content. Please reach out to a crisis hotline or a trusted person for support."
+            message_text = f"Your message was flagged for self-harm content. Please reach out to a crisis hotline or a trusted person for support [RETRACTED]."
             payload = {
                 "type": "message",
                 "text": message_text,
@@ -139,6 +140,24 @@ async def handle_message(websocket, raw_message, session):
             "messages": messages
         }
         await websocket.send(json.dumps(response))
+    elif data.get("type") == "like":
+        chatid = data.get("chatid")
+        
+        if not chatid:
+            logging.warning("Like message missing chatid.")
+            return
+        
+        user_email = websocket.user_email
+        new_like_count = await toggle_like_on_message(chatid, user_email)
+        
+        response = {
+            "type": "like_update",
+            "chatid": chatid,
+            "new_like_count": new_like_count,
+            "user_email": user_email
+        }
+        await websocket.send(json.dumps(response))
+        logging.info(f"User '{user_email}' toggled like for message '{chatid}'. New count: {new_like_count}")
         
     else:
         logging.warning(f"Unknown message type: {data.get('type')}")

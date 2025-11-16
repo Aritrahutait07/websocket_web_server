@@ -63,7 +63,7 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
 
         if before:
             query = """
-                SELECT userId,email, text, timestamp,like_count
+                SELECT userId,email text, timestamp
                 FROM messages
                 WHERE roomId = %s AND timestamp < %s
                 ORDER BY timestamp DESC
@@ -72,7 +72,7 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
             cur.execute(query, (roomId, before, limit))
         else:
             query = """
-                SELECT userId,email, text, timestamp,like_count
+                SELECT userId,email, text, timestamp
                 FROM messages
                 WHERE roomId = %s
                 ORDER BY timestamp DESC
@@ -86,8 +86,7 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
                 "userId": row[0],
                 "text": row[2],
                 "email": row[1],
-                "timestamp": row[3].isoformat(),
-                "like_count": row[4]
+                "timestamp": row[3].isoformat()
             })
 
         # if we got messages, set nextCursor to the last one's timestamp
@@ -108,63 +107,32 @@ def fetch_messages_keyset(roomId, before=None, limit=50):
     
 
 
-def _toggle_like_on_message_blocking(chatid, user_email):
+def _log_moderation_event_blocking(userId, userEmail, roomId, text, category, severity, action):
     conn = None
-    new_like_count = 0
     try:
         conn = db_pool.getconn()
         cur = conn.cursor()
-
-        
         cur.execute(
-            "SELECT 1 FROM message_likes WHERE chatid = %s AND liked_by_email = %s",
-            (chatid, user_email)
+            """
+            INSERT INTO moderation_logs 
+            (user_id, user_email, room_id, original_message_text, violation_category, severity_score, action_taken) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (userId, userEmail, roomId, text, category, severity, action)
         )
-        already_liked = cur.fetchone()
-
-        if already_liked:
-            
-            cur.execute(
-                "DELETE FROM message_likes WHERE chatid = %s AND liked_by_email = %s",
-                (chatid, user_email)
-            )
-            
-            cur.execute(
-                "UPDATE messages SET like_count = like_count - 1 WHERE chatid = %s RETURNING like_count",
-                (chatid,)
-            )
-        else:
-           
-            cur.execute(
-                "INSERT INTO message_likes (chatid, liked_by_email) VALUES (%s, %s)",
-                (chatid, user_email)
-            )
-            
-            cur.execute(
-                "UPDATE messages SET like_count = like_count + 1 WHERE chatid = %s RETURNING like_count",
-                (chatid,)
-            )
-
-        
-        result = cur.fetchone()
-        if result:
-            new_like_count = result[0]
-        
-        
         conn.commit()
         cur.close()
-        logging.info(f"User '{user_email}' toggled like for message '{chatid}'. New count: {new_like_count}")
-
+        logging.info(f"Logged moderation event for user '{userId}' in room '{roomId}'. Action: {action}")
     except Exception as e:
-        logging.error(f"Database error during like toggle: {e}")
-        
+        logging.error(f"Database error while logging moderation event: {e}")
         if conn: conn.rollback()
     finally:
         if conn:
             db_pool.putconn(conn)
-    
-    return new_like_count
 
-async def toggle_like_on_message(chatid, user_email):
-    """Asynchronously toggles a like on a message and returns the new like count."""
-    return await asyncio.to_thread(_toggle_like_on_message_blocking, chatid, user_email)
+async def log_moderation_event(userId, userEmail, roomId, text, category, severity, action):
+    """Asynchronously logs a moderation event to the database."""
+    await asyncio.to_thread(
+        _log_moderation_event_blocking, 
+        userId, userEmail, roomId, text, category, severity, action
+    )

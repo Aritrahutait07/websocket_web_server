@@ -10,9 +10,10 @@ import os
 
 async def health_check(path, request_headers):
     
-    if path == "/health":
-        
-        return websockets.http.Response(status_code=200, headers={"Content-Type": "text/plain"}, body=b"OK")
+    if "Upgrade" not in request_headers:
+        logging.info("Health check request received.")
+        return websockets.http.Response(200, {}, b"OK\n")
+    
     
     return None
 

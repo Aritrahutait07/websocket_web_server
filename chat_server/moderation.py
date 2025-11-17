@@ -6,10 +6,10 @@ from config import AZURE_CONTENT_SAFETY_KEY, AZURE_CONTENT_SAFETY_ENDPOINT
 API_VERSION = "2023-10-01"
 
 THRESHOLDS = {
-    'Hate': 4,
-    'Violence': 4,
-    'Sexual': 4,
-    'SelfHarm': 2, 
+    'Hate': 1,
+    'Violence':1,
+    'Sexual': 1,
+    'SelfHarm': 1, 
 }
 
 async def analyze_text(session, text_to_analyze: str):

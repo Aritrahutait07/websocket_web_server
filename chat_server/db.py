@@ -198,3 +198,33 @@ def _toggle_like_on_message_blocking(chatid, user_email):
 async def toggle_like_on_message(chatid, user_email):
     """Asynchronously toggles a like on a message and returns the new like count."""
     return await asyncio.to_thread(_toggle_like_on_message_blocking, chatid, user_email)
+
+def _fetch_recent_messages_blocking(roomId, count=5):
+    """Fetches the last 'count' messages from a room for context."""
+    conn = None
+    messages = []
+    try:
+        conn = db_pool.getconn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT email, text FROM messages
+            WHERE roomId = %s
+            ORDER BY timestamp DESC
+            LIMIT %s
+            """,
+            (roomId, count)
+        )
+        rows = cur.fetchall()
+        # Reverse the list to get the correct chronological order for the LLM.
+        messages = [{"email": row[0], "text": row[1]} for row in reversed(rows)]
+        cur.close()
+    except Exception as e:
+        logging.error(f"Database error while fetching recent messages: {e}")
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+    return messages
+
+async def fetch_recent_messages(roomId, count=5):
+    return await asyncio.to_thread(_fetch_recent_messages_blocking, roomId, count)

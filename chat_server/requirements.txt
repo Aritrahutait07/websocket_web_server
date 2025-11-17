@@ -6,3 +6,4 @@ google-auth
 requests
 aiohttp
 azure-ai-contentsafety
+google-generativeai

@@ -1,4 +1,4 @@
-# contextual_moderation_gemini.py
+
 import logging
 import google.generativeai as genai
 
@@ -8,7 +8,7 @@ import json
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# This is the "brain" of our moderator. It tells Gemini its role, rules, and output format.
+
 SYSTEM_PROMPT = """
         You are a context-aware content moderator for a sensitive mental health chat application. 
         Your goal is to ensure user safety by evaluating a new message within the context of the recent conversation history.
@@ -46,7 +46,7 @@ async def analyze_with_gemini_context(conversation_history, new_message_text, us
     try:
         model = genai.GenerativeModel('gemini-2.0-flash')
 
-        # Format the history and the new message for the prompt
+        
         formatted_history = "\n".join([f"{msg['email']}: {msg['text']}" for msg in conversation_history])
         
         full_prompt = f"""
@@ -61,10 +61,10 @@ async def analyze_with_gemini_context(conversation_history, new_message_text, us
         {user_email}: {new_message_text}
         """
 
-        # Generate the content asynchronously
+        
         response = await model.generate_content_async(full_prompt)
         
-        # Clean the response to ensure it's valid JSON
+        
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         result_json = json.loads(cleaned_response)
 
@@ -76,7 +76,4 @@ async def analyze_with_gemini_context(conversation_history, new_message_text, us
 
     except Exception as e:
         logging.error(f"Error during Gemini contextual analysis: {e}")
-        # FAILSAFE: If the AI call fails, we must not block the user.
-        # We will trust the initial, less-accurate decision in this case.
-        # A real production system might have more complex retry logic.
         return None, None

@@ -86,28 +86,52 @@ async def handle_message(websocket, raw_message, session):
             gemini_decision, reason = await analyze_with_gemini_context(history_messages, message_text, websocket.user_email)
             if gemini_decision == 'SAFE':
                 logging.info("Gemini Contextual Check Passed inside Block Action")
+                payload = {
+                    "type": "message",
+                    "text": message_text,
+                    "userId": websocket.user_id, 
+                    "email": websocket.user_email,
+                    "roomId": websocket.room_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+                await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
                 #print("\nGemini Contextual Check Passed")
-                pass
+                #pass
             elif gemini_decision == 'BLOCK':       
                 #print("\nGemini Contextual Check Failed inside Block Action")
                 logging.info("Gemini Contextual Check Failed inside Block Action")
                 message_text = f"Your message was blocked due to moderation rules due to category {category}. Please adhere to community guidelines [RETRACTED]."
-            payload = {
-                "type": "message",
-                "text": message_text,
-                "userId": websocket.user_id, 
-                "email": websocket.user_email,
-                "roomId": websocket.room_id,
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
+                payload = {
+                    "type": "message",
+                    "text": message_text,
+                    "userId": websocket.user_id, 
+                    "email": websocket.user_email,
+                    "roomId": websocket.room_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+                await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
+                
+            elif gemini_decision == 'SELF_HARM_ALERT':
+                logging.info("Gemini Contextual Check Failed inside Block Action - Self Harm Alert")
+                message_text = f"Your message was blocked due to self-harm alert. Please reach out to a trusted friend or professional for support. [RETRACTED]"
+                payload = {
+                    "type": "message",
+                    "text": message_text,
+                    "userId": websocket.user_id, 
+                    "email": websocket.user_email,
+                    "roomId": websocket.room_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
             #end_time = datetime.now(UTC).isoformat()
             #total_time = (datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)).total_seconds()
             # print("\nModeration Check Time:", total_time, "seconds")
             # print("\nModeration Blocked Content")
             # print(f"Current Message Text: {message_text}")
-            await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
-            logging.info(f"Current Message Text: {message_text}")
-            await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
+                await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+                #logging.info(f"Current Message Text: {message_text}")
+                await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
             
             
 
@@ -119,27 +143,50 @@ async def handle_message(websocket, raw_message, session):
             if gemini_decision == 'SAFE':
                 #print("\nGemini Contextual Check Passed for Self Harm Alert inside Self Harm Alert")
                 logging.info("Gemini Contextual Check Passed for Self Harm Alert")
-                pass
+                payload = {
+                    "type": "message",
+                    "text": message_text,
+                    "userId": websocket.user_id, 
+                    "email": websocket.user_email,
+                    "roomId": websocket.room_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+                await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
             elif gemini_decision == 'SELF_HARM_ALERT':
                 #print("\nGemini Contextual Check Failed for Self Harm Alert")
                 logging.info("Gemini Contextual Check Failed for Self Harm Alert")
                 message_text = f"Your message was flagged for self-harm content. Please reach out to a crisis hotline or a trusted person for support [RETRACTED]."
-            payload = {
-                "type": "message",
-                "text": message_text,
-                "userId": websocket.user_id, 
-                "email": websocket.user_email,
-                "roomId": websocket.room_id,
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
+                payload = {
+                    "type": "message",
+                    "text": message_text,
+                    "userId": websocket.user_id, 
+                    "email": websocket.user_email,
+                    "roomId": websocket.room_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+                await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
+            elif gemini_decision == 'BLOCK':
+                #print("\nGemini Contextual Check Failed for Self Harm Alert")
+                logging.info("Gemini Contextual Check Failed for Self Harm Alert")
+                message_text = f"Your message was blocked due to moderation rules due to category {category}. Please adhere to community guidelines [RETRACTED]."
+                payload = {
+                    "type": "message",
+                    "text": message_text,
+                    "userId": websocket.user_id, 
+                    "email": websocket.user_email,
+                    "roomId": websocket.room_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
             #end_time = datetime.now(UTC).isoformat()
             #total_time = (datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)).total_seconds()
             #print("\nModeration Check Time for Self Harm Alert:", total_time, "seconds")
             #print("\nSelf Harm Alert Content")
             #print(f"Current Message Text: {message_text}")
-            logging.info(f"Current Message Text: {message_text}")
-            await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
-            await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
+                #logging.info(f"Current Message Text: {message_text}")
+                await broadcast(websocket.room_id, json.dumps(payload), exclude_sender=True, sender_websocket=websocket)
+                await save_message_to_db(websocket.room_id, websocket.user_id, websocket.user_email, message_text)
             
             
 
